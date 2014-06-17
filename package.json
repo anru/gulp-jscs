@@ -34,10 +34,13 @@
   ],
   "dependencies": {
     "gulp-util": "^2.2.0",
-    "through2": "^0.4.0",
-    "jscs": "^1.4.3"
+    "through2": "^0.4.0"
+  },
+  "peerDependencies": {
+    "jscs": "*"
   },
   "devDependencies": {
+    "jscs": "^1.4.3",
     "mocha": "*"
   }
 }

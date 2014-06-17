@@ -1,46 +1,66 @@
 'use strict';
+
 var path = require('path');
 var gutil = require('gulp-util');
 var through = require('through2');
 var Checker = require('jscs');
 var loadConfigFile = require('jscs/lib/cli-config');
 
+function resolveReporter(reporter) {
+    if (!reporter) reporter = 'console';
+
+    if (typeof reporter == 'function') {
+        return reporter;
+    }
+    if (reporter.indexOf('/') == -1) {
+        return require('jscs/lib/reporters/' + reporter);
+    }
+
+    return require(reporter);
+}
+
+function reporter(name) {
+    var report = resolveReporter(name);
+    var errorsCollection = [];
+
+    return through.obj(function(file, enc, done) {
+        if (file.jscs && !file.jscs.success) {
+            errorsCollection.push(file.jscs.errors);
+        }
+        done(null, file);
+    }, function(cb) {
+        report(errorsCollection);
+        cb();
+    });
+}
+
 module.exports = function (configPath) {
-	var out = [];
-	var checker = new Checker();
+    var checker = new Checker();
 
-	checker.registerDefaultRules();
-	checker.configure(loadConfigFile.load(configPath));
+    checker.registerDefaultRules();
+    checker.configure(loadConfigFile.load(configPath));
 
-	return through.obj(function (file, enc, cb) {
-		if (file.isNull()) {
-			this.push(file);
-			return cb();
-		}
+    return through.obj(function (file, enc, cb) {
+        if (file.isNull()) return cb(null, file);
 
-		if (file.isStream()) {
-			this.emit('error', new gutil.PluginError('gulp-jscs', 'Streaming not supported'));
-			return cb();
-		}
+        if (file.isStream()) {
+            return cb(new gutil.PluginError('gulp-jscs', 'Streaming not supported'));
+        }
 
-		try {
-			var errors = checker.checkString(file.contents.toString(), path.basename(file.path));
-			errors.getErrorList().forEach(function (err) {
-				out.push(errors.explainError(err, true));
-			});
-		} catch (err) {
-			out.push(err.message.replace('null:', file.relative + ':'));
-		}
+        var relativePath = path.relative(process.cwd(), file.path);
 
-		this.push(file);
-		cb();
-	}, function (cb) {
-		if (out.length > 0) {
-			this.emit('error', new gutil.PluginError('gulp-jscs', out.join('\n\n'), {
-				showStack: false
-			}));
-		}
-
-		cb();
-	});
+        var errors;
+        try {
+            errors = checker.checkString(file.contents.toString(), relativePath);
+        } catch (err) {
+            return cb(new gutil.PluginError('gulp-jscs', err.message.replace('null:', relativePath + ':')));
+        }
+        file.jscs = {
+            success: errors.isEmpty(),
+            errors: errors
+        };
+        cb(null, file);
+    });
 };
+
+module.exports.reporter = reporter;
